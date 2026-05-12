@@ -6,9 +6,7 @@ from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
 
-# ---------------- FETCH MOVIE POSTER ---------------- #
-
-def fetch_poster(movie_id):
+def fetch_movie_details(movie_id):
 
     response = requests.get(
         f'https://api.themoviedb.org/3/movie/{movie_id}?api_key=b8b022efaf5100c77357cd6a6d3dac5e&language=en-US'
@@ -16,33 +14,45 @@ def fetch_poster(movie_id):
 
     data = response.json()
 
-    if 'poster_path' in data and data['poster_path'] is not None:
-        return "https://image.tmdb.org/t/p/w500/" + data['poster_path']
+    if data.get('poster_path'):
+        poster = "https://image.tmdb.org/t/p/w500/" + data['poster_path']
+    else:
+        poster = "https://via.placeholder.com/500x750?text=No+Image"
 
-    return "https://via.placeholder.com/500x750?text=No+Image"
+    overview = data.get(
+        'overview',
+        'No description available.'
+    )
 
+    rating = data.get(
+        'vote_average',
+        'N/A'
+    )
 
-# ---------------- LOAD MOVIE DATA ---------------- #
+    return poster, overview, rating
+
 
 movies_dict = pickle.load(open('movie_dict.pkl', 'rb'))
 
 movies = pd.DataFrame(movies_dict)
 
+cv = CountVectorizer(
+    max_features=5000,
+    stop_words='english'
+)
 
-# ---------------- GENERATE SIMILARITY ---------------- #
-
-cv = CountVectorizer(max_features=5000, stop_words='english')
-
-vectors = cv.fit_transform(movies['tags']).toarray()
+vectors = cv.fit_transform(
+    movies['tags']
+).toarray()
 
 similarity = cosine_similarity(vectors)
 
 
-# ---------------- RECOMMEND FUNCTION ---------------- #
-
 def recommend(movie):
 
-    movie_index = movies[movies['title'] == movie].index[0]
+    movie_index = movies[
+        movies['title'] == movie
+    ].index[0]
 
     distances = similarity[movie_index]
 
@@ -53,8 +63,9 @@ def recommend(movie):
     )[1:6]
 
     recommended_movies = []
-
-    recommended_movies_posters = []
+    recommended_posters = []
+    recommended_overviews = []
+    recommended_ratings = []
 
     for i in movies_list:
 
@@ -64,14 +75,21 @@ def recommend(movie):
             movies.iloc[i[0]].title
         )
 
-        recommended_movies_posters.append(
-            fetch_poster(movie_id)
-        )
+        poster, overview, rating = fetch_movie_details(movie_id)
 
-    return recommended_movies, recommended_movies_posters
+        recommended_posters.append(poster)
 
+        recommended_overviews.append(overview)
 
-# ---------------- STREAMLIT UI ---------------- #
+        recommended_ratings.append(rating)
+
+    return (
+        recommended_movies,
+        recommended_posters,
+        recommended_overviews,
+        recommended_ratings
+    )
+
 
 st.set_page_config(
     page_title="Movie Recommender",
@@ -81,7 +99,7 @@ st.set_page_config(
 
 st.markdown(
     """
-    <h1 style='text-align: center; color: #FF4B4B;'>
+    <h1 style='text-align:center; color:#FF4B4B;'>
         🎬 Movie Recommender System
     </h1>
     """,
@@ -90,7 +108,7 @@ st.markdown(
 
 st.markdown(
     """
-    <h4 style='text-align: center; color: gray;'>
+    <h4 style='text-align:center; color:gray;'>
         Get personalized movie recommendations instantly
     </h4>
     """,
@@ -106,12 +124,11 @@ selected_movie_name = st.selectbox(
 
 st.write("")
 
-
-# ---------------- BUTTON ---------------- #
-
 if st.button('Recommend'):
 
-    names, posters = recommend(selected_movie_name)
+    names, posters, overviews, ratings = recommend(
+        selected_movie_name
+    )
 
     cols = st.columns(5)
 
@@ -121,7 +138,7 @@ if st.button('Recommend'):
 
             st.image(
                 posters[idx],
-                use_container_width=True
+                width=180
             )
 
             st.markdown(
@@ -131,10 +148,21 @@ if st.button('Recommend'):
                     font-size:16px;
                     font-weight:bold;
                     padding-top:10px;
-                    min-height:70px;
+                    min-height:60px;
                 ">
                     {names[idx]}
                 </div>
                 """,
                 unsafe_allow_html=True
             )
+
+            st.markdown(
+                f"""
+                <div style='text-align:center; color:gold; font-weight:bold;'>
+                     Rating: {ratings[idx]}
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+            st.caption(overviews[idx])
